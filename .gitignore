@@ -1,0 +1,5 @@
+.venv/
+downloaded/
+.vscode/
+logger*
+foundurls.txt 
