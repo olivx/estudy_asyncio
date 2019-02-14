@@ -1,5 +1,6 @@
 import re
 import sys
+import random
 import logging
 import asyncio 
 import pathlib
@@ -22,7 +23,7 @@ f_logger.setLevel(logging.DEBUG)
 logger.addHandler(f_logger)
 
 SRC_RE = re.compile(r'(srcset)="(.*?)"')
-_url = 'https://pixabay.com/en/photos/?image_type=photo' # url from test 
+ # url from test 
 
 async def fecth_html(url: str, session: ClientSession,  **kwargs) -> str:
     """ all src link from _url """
@@ -60,7 +61,7 @@ async def parse_html(url: str, session: ClientSession, **kwargs) -> set:
     return found
 
 
-async def wrote_file(url: str, file_name: str, session: ClientSession, **kwargs) -> None:
+async def write_file(url: str, file_name: str, session: ClientSession, **kwargs) -> None:
     content = await fecth_content(url, session, **kwargs)
 
     async with aiofiles.open(file_name, 'wb') as infile:
@@ -70,29 +71,74 @@ async def wrote_file(url: str, file_name: str, session: ClientSession, **kwargs)
 
 async def donwload(url: str, session: ClientSession, **kwargs) -> None:
     """ make download the img in url """
-    urls = await parse_html(url=_url, session=session)
+    urls = await parse_html(url=url, session=session)
     
     tasks = []
     for index, url in enumerate(urls):
         file_name = url.split("/")[-1]
         tasks.append(
-            wrote_file(url, pathlib.Path('downloaded').joinpath(file_name), session=session)
+            write_file(url, pathlib.Path('downloaded').joinpath(file_name), session=session)
         )
         logger.info('ADD task %s to write file %s in url %s', index, file_name, url)
     await asyncio.gather(*tasks)
 
 
-async def crawl(url: str, **kwargs) -> None:
+async def crawl(urls: str, **kwargs) -> None:
     async with ClientSession(trust_env=True) as session:
-        await asyncio.gather(donwload(url=_url, session=session))
+        tasks = []
+        logger.info('working with %s pages', len(urls))
+        for _url in urls:
+            tasks.append(donwload(url=_url, session=session))
+            logger.info('START with URL %s', _url)
+        await asyncio.gather(*tasks)
     
 
 
 if __name__ == "__main__":
+    import argparse
+    import shutil
+    import time 
+
+    start = time.perf_counter()
+    message_start = f'START at {start:0.2f}, executed in seconds'
+    logger.info(message_start)
+
+    DEFAULR_PAGES_RANGE = 10
+    MAX_PAGES_DOWNLOADER = 7586
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--clean", help="delete all  downloaded images", type=bool)
+    parser.add_argument("--pages", help="how many pages would you like to download", type=int)
+    args = parser.parse_args()
+    
+
+    if args.pages and args.pages > MAX_PAGES_DOWNLOADER:
+        error_message =  f'{args.pages} exceeded MAX_PAGES_DOWNLOADER, max value is {MAX_PAGES_DOWNLOADER}'
+        logger.error('%s  exceeded MAX_PAGES_DOWNLOADER, max value is %s', args.pages, MAX_PAGES_DOWNLOADER)
+        raise ValueError(error_message)
+    
+    elif args.pages is not None:
+        pages_range = args.pages
+   
+    else:
+        pages_range = DEFAULR_PAGES_RANGE
+    
+    if args.clean:
+        if pathlib.Path('downloaded').exists():
+            shutil.rmtree(pathlib.Path('downloaded'))
+
     if not pathlib.Path('downloaded').exists():
         pathlib.Path('downloaded').mkdir()
-    
-    asyncio.run(crawl(url=_url))
 
+    urls = []
+    for page in range(1, pages_range):
+        urls.append(f'https://pixabay.com/en/photos/?image_type=photo&pagi={page}')
+    asyncio.run(crawl(urls=urls))
 
-
+    stop = time.perf_counter()
+    elapsed = stop - start 
+    message_stop = f'STOP AT {stop:0.2f}, executed in seconds'
+    message_finish = f'EXCUTED IN {elapsed:0.2f}, executed in seconds'
+    logger.info(message_stop)
+    logger.info(message_finish)
+   
